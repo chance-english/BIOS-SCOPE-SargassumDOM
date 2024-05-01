@@ -1,0 +1,858 @@
+---
+title: "BIOSSCOPE_SDOM_master"
+author: "Chance English"
+date: "5/10/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, echo = FALSE, warning = FALSE)
+
+```
+
+
+```{r}
+
+
+library(tidyverse)
+library(here)
+library(ggplot2)
+library(janitor)
+library(ggsci)
+library(lubridate)
+library(readxl)
+library(growthcurver)
+library(zoo)
+library(scales)
+library(kableExtra)
+library(broom)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+library(tidyverse)
+library(reshape2)
+library(vegan)
+library(cowplot)
+
+```
+
+
+
+```{r}
+
+BIOSSCOPE_sdom <- read_xlsx(here("data", "SDOM_DOC_CDOM_Summary.xlsx"), sheet = 1) %>% 
+  mutate(zone = case_when(
+    depth == "200m" ~ "Mesopelagic",
+    depth == "1m" ~ "Surface",
+    depth == "10m" ~ "Surface"
+  ))
+
+
+
+BIOSSCOPE_sdom_cdom <- read_xlsx(here("data", "SDOM_DOC_CDOM_Summary.xlsx"), sheet = 2)
+
+
+
+```
+
+
+
+
+# DOC Exudation Rates 
+
+```{r}
+
+
+SDOM_exudation <- read_xlsx(here("data", "SargDOM_exudate_summary_June_July_2021.xlsx"), sheet = 1)
+
+
+SDOM_exud_exp <- SDOM_exudation %>% 
+  filter(phase == "Exudation", experiment != "21_1") %>% 
+  group_by(experiment, days, bottle,phys_state) %>% 
+  summarise(doc_mgC = mean(DOC_uMC_gWW_d), sd_mgC = sd(DOC_uMC_gWW_d)) %>% 
+  ungroup() %>% 
+  mutate(hours = days*24) %>% 
+  select(-days)
+
+
+healthy_Sarg_DOM_production_rates <- SDOM_exud_exp %>% 
+  group_by(experiment, bottle) %>% 
+  nest() %>% 
+  mutate(model = map(data, ~lm(doc_mgC ~ hours, data = .x) %>% 
+                       tidy)) %>% 
+  unnest(model) %>% 
+  filter(term == "hours") %>% 
+  select(experiment, bottle, estimate) %>% 
+  mutate(mgC_g_hr = estimate) %>% 
+  select(-estimate)
+  
+mean(healthy_Sarg_DOM_production_rates$mgC_g_hr)
+sd(healthy_Sarg_DOM_production_rates$mgC_g_hr)
+
+
+SDOM_21_2 <- SDOM_exud_exp %>% 
+  filter(experiment == "21_2") 
+SDOM_21_3 <- SDOM_exud_exp %>% 
+  filter(experiment == "21_3") 
+
+
+
+SDOM_sensescent_lm <- lm(doc_mgC ~ hours, data = SDOM_21_2)
+SDOM_healthy_lm <- lm(doc_mgC ~ hours, data = SDOM_21_3)
+
+
+summary(SDOM_sensescent_lm)
+summary(SDOM_healthy_lm)
+
+
+exud_plot <- SDOM_exud_exp %>% 
+  ggplot(aes(x = hours/24, y = doc_mgC)) +
+  geom_point(aes(color = phys_state), size = 10) +
+  geom_errorbar(aes(color = phys_state, ymin = doc_mgC - sd_mgC, ymax = doc_mgC + sd_mgC)) +
+  geom_smooth(method = "lm", aes(color = phys_state), se = FALSE) +
+  scale_color_manual(values = c("darkgrey","black")) +
+  labs(x = "Days") +
+  ylab(expression(DOC~(µmolC ~ g[Sargassum]^{"-1"}))) +
+  scale_x_continuous(limits = c(0,3.1), expand = c(0,0)) +
+  scale_y_continuous(limits = c(0,500), expand = c(0,0.01)) +
+  labs(color = c("Mature", "Senescent")) +
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        plot.margin = margin(1,1,1,1, "cm"),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = c(.18,.85),
+        legend.text = element_text(size = 20),
+        axis.text = element_text(size = 20, color = "black"),
+        axis.title = element_text(size = 25),
+        text = element_text(family = "Times"))
+
+
+
+
+```
+
+
+
+
+# ParV TOC 90 Days
+
+```{r}
+
+parv_plot <- BIOSSCOPE_sdom %>% 
+  filter(parv_toc != "NA") %>% 
+  mutate(zone = fct_relevel(zone, "Surface", "Mesopelagic")) %>% 
+  ggplot(aes(x = days, y = parv_toc)) +
+  geom_point(aes(color = exudate_condition), size = 5) +
+  scale_color_manual(values = c("goldenrod2", "gray")) +
+  geom_line(aes(color = exudate_condition))+ 
+  labs(x = "Days",
+       y = "% Initial DOC (µM)") +
+  facet_grid(treatment~zone) +
+  scale_x_continuous(limits = c(0,90)) +
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black", size = 1.5),
+        strip.text.x = element_text(),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 15),
+        strip.text = element_text(size = "20"),
+        axis.text = element_text(size = 15),
+        axis.title = element_text(size = 17),
+        text = element_text(family = "Times"),
+        legend.position = "top")
+
+
+
+
+```
+
+# Summarize Ammendment Concnetration, Change over Entire Incubation and Percent Bioavailability
+
+```{r}
+
+# Calculate ammendments (µMC), the change in DOC relative to controls and the percent of the ammended DOC that remained after 80-90 days. Error for percent bioavailable is the standard error for the change in zeroed DOC divided by the DOC ammendment. 
+
+
+bioavailability_sum_data <- BIOSSCOPE_sdom %>% 
+ group_by(cruise, depth, exudate_condition) %>% 
+  filter(parv_toc != "NA", period %in% c("T0", "TF")) %>% 
+  summarize(treatment = c("Control", "SDOM", "SPE-SDOM"),
+            ammendment_doc = round(parv_toc[timepoint == 0] - parv_toc[treatment == "Control" & timepoint == 0],0),
+            se_ammendment_doc = round(sqrt(parv_toc_sd[timepoint == 0]^2 + parv_toc_sd[treatment == "Control" & timepoint == 0]^2),0),
+            delta_doc_90 = round((parv_toc[period == "TF"] - parv_toc[period == "T0"])*-1,1),
+            se_delta_doc_90 = round(sqrt(parv_toc_sd[timepoint==0]^2 + parv_toc_sd[treatment == "Control" & timepoint == 0]^2),1),
+            delta_doc_90_zeroed = round((delta_doc_90 - delta_doc_90[treatment == "Control"]),1),
+            se_delta_doc_90_zeroed = round(sqrt(se_delta_doc_90^2 + se_delta_doc_90[treatment == "Control"]^2),1),
+            percent_bioavailable = round((delta_doc_90_zeroed / ammendment_doc)*100,0),
+            se_percent_bioavailable = round((se_delta_doc_90_zeroed/ammendment_doc)*100,0)) %>% 
+  ungroup() %>% 
+  mutate(incubation_zone = case_when(
+    depth %in% c("1m", "10m") ~ "Surface",
+    depth == "200m" ~ "Mesopelagic"
+  )) %>% 
+  filter(treatment != "Control") %>% 
+  mutate(treatment_phys = paste(exudate_condition, treatment, sep = " "))
+
+
+# Plot showing the percent of amended DOC which remained after 80-90 days +/- the error in this percentage. 
+
+recalcitrance_plot <- bioavailability_sum_data %>%
+  ggplot(aes(x = reorder(treatment_phys, -percent_bioavailable), y = percent_bioavailable, fill = incubation_zone)) +
+  geom_bar(stat = "identity", position = position_dodge(), clor = "black") +
+  geom_errorbar(aes(ymin = percent_bioavailable - se_percent_bioavailable, ymax = percent_bioavailable + se_percent_bioavailable), width = 0, position = position_dodge(0.8)) +
+  labs(y = "Bioavailable DOC (% Amended)",
+       x = "") +
+  scale_fill_manual(values = c("indianred","steelblue3")) +
+  scale_x_discrete(labels = c("Sensescent \n+DOC", "Mature \n+DOC", "Sensecent \n+SPE-DOC", "Mature \n+SPE-DOC")) + scale_y_continuous(breaks = c(0,25,50,75,100)) +
+   theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        plot.margin = margin(0.5,0.5,0.5,0.5, "cm"),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = c(.8,.88),
+        legend.text = element_text(size = 25),
+        axis.text.x = element_text(size = 20, vjust = 0.5, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black"),
+        axis.title = element_text(size = 25),
+        text = element_text(family = "Times")) 
+
+
+recalcitrance_plot <- bioavailability_sum_data %>%
+  ggplot(aes(x = reorder(treatment_phys, -percent_bioavailable), y = percent_bioavailable, fill = incubation_zone)) +
+  geom_bar(stat = "identity", position = position_dodge(), clor = "black") +
+  geom_errorbar(aes(ymin = percent_bioavailable - se_percent_bioavailable, ymax = percent_bioavailable + se_percent_bioavailable), width = 0, position = position_dodge(0.8)) +
+  labs(y = "% Bioavailable",
+       x = "") +
+  scale_fill_manual(values = c("indianred","steelblue3")) +
+  scale_x_discrete(labels = c("Sensescent \n Whole", "Mature \n Whole", "Sensecent \n SPE", "Mature \n SPE")) + scale_y_continuous(breaks = c(0,25,50,75,100)) +
+   theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        plot.margin = margin(0.5,0.5,0.5,0.5, "cm"),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = c(.8,.88),
+        legend.text = element_text(size = 25),
+        axis.text.x = element_text(size = 20, vjust = 0.5, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black"),
+        axis.title = element_text(size = 25),
+        text = element_text(family = "Times")) 
+
+
+
+
+
+```
+
+
+# Treatments & Bioavailability Summary Data Table
+
+```{r}
+
+# Load phenolic content data
+
+phenolic_content <- read_xlsx(here("data", "Sargassum_recalcitrance.xlsx"))
+
+  
+phenolic_content_clean <- phenolic_content %>% 
+  select(exudate_condition, incubation_zone, treatment, TPC_HMW_percentDOC, sd_TPC_percent_DOC, Ammendment, ) %>% 
+  mutate(TPC_HMW_percentDOC = round(TPC_HMW_percentDOC,0),
+         sd_TPC_percent_DOC = round(sd_TPC_percent_DOC,0))
+
+
+bioavailability_sum_data_clean <- bioavailability_sum_data %>% 
+  mutate(exudate_condition = case_when(
+    exudate_condition == "Senescent" ~ "Senescent",
+    exudate_condition == "Mature" ~ "Healthy"
+  )) %>% 
+  select(exudate_condition, treatment, ammendment_doc, se_ammendment_doc, percent_bioavailable, se_percent_bioavailable, incubation_zone)
+  
+
+bioavailability_sum_phenolic <- merge(phenolic_content_clean, bioavailability_sum_data_clean, 
+                                      by = c("exudate_condition", "incubation_zone", "treatment"))
+
+
+bioavailability_sum_phenolic$amended_DOC_se <- paste(bioavailability_sum_phenolic$ammendment_doc,
+                                                bioavailability_sum_phenolic$se_ammendment_doc,
+                                                     sep = "±")
+
+bioavailability_sum_phenolic$bioavailable_DOC_se = paste(bioavailability_sum_phenolic$percent_bioavailable,                                                     bioavailability_sum_phenolic$se_percent_bioavailable, 
+                                                         sep = "±")
+
+bioavailability_sum_phenolic$phenolic_se = paste(bioavailability_sum_phenolic$TPC_HMW_percentDOC) 
+
+
+
+bioavailability_sum_phenolic_clean <- bioavailability_sum_phenolic %>% 
+  select(exudate_condition, incubation_zone, Ammendment, amended_DOC_se, phenolic_se, bioavailable_DOC_se)
+
+
+amendment_bioavailability_table <- bioavailability_sum_phenolic_clean %>% 
+  kbl(col.names = c("Physiological State", "Depth Zone", "Treatment","DOC Amended (µMC)", "TPC (%DOC)", "Bioavailability (%)")) %>% 
+  kable_styling(html_font = "Times New Roman", bootstrap_options = c("striped","hover", "condensed"), font_size = 24) %>% 
+  row_spec(0, bold = T) %>%
+  column_spec(1, width = "10cm") %>% 
+  column_spec(2, width = "5cm") %>% 
+  column_spec(3, width = "5cm") %>% 
+  column_spec(4, width = "10cm") %>% 
+  column_spec(5, width = "10cm") %>% 
+  column_spec(6, width = "10cm")
+
+
+
+```
+
+
+#a275nm over time plot 
+
+```{r}
+
+AE2213_CDOM_long <- melt(BIOSSCOPE_sdom_cdom, id = 'wvln_2', variable.name = 'CDOM_code')
+
+BIOSSCOPE_sdom_cdom_metadata <- BIOSSCOPE_sdom %>% 
+  select(cruise, days, depth, exudate_condition, period,treatment, CDOM_code)
+
+
+BIOSSCOPE_cdom_metadata <- merge(AE2213_CDOM_long, BIOSSCOPE_sdom_cdom_metadata, by = "CDOM_code")
+
+BIOSSCOPE_cdom_metadata_270 <- BIOSSCOPE_cdom_metadata %>% 
+  filter(wvln_2 == 275)
+
+
+a270nm_cdom_time_plot <- BIOSSCOPE_cdom_metadata_270 %>% 
+   mutate(depth_zone =
+           case_when(depth %in% c("1m", "10m") ~ "Surface",
+                     depth == "200m" ~ "Mesopelagic")) %>% 
+  ggplot(aes(x = days, y = value, color = treatment)) +
+  geom_point(size = 5) +
+  geom_line(size = 1) +
+  labs(x = "Days") +
+  ylab(expression(a["275nm"]~(m^{"-1"}))) +
+  facet_grid(.~factor(depth_zone, levels = c("Surface", "Mesopelagic"))) +
+  scale_y_continuous(limits = c(0,2)) +
+  scale_color_manual(values = c("blue", "brown2", "goldenrod1"), labels = c("Control", "+DOC", "+SPE-DOC")) + 
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        plot.margin = margin(0.5,0.5,0.5,0.5, "cm"),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = "top",
+        legend.text = element_text(size = 20),
+        axis.text.x = element_text(size = 20, vjust = 0.5, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black"),
+        axis.title = element_text(size = 25),
+        text = element_text(family = "Times"),
+        panel.spacing = unit(3, "lines"),
+        strip.text.x = element_text(size = 20)) 
+
+
+```
+
+# Absorption 275nm Remaining after 3 months 
+
+
+```{r}
+
+BIOSSCOPE_cdom_metadata_270 %>% 
+  filter(period != "NA") %>% 
+  filter(depth == "200m") %>% 
+  group_by(treatment) %>% 
+  summarize(percent_275nm = (value[period == "TF"]/value[period == "T0"])*100) %>% 
+  filter(percent_275nm != "NA")
+
+BIOSSCOPE_cdom_metadata_270 %>% 
+  filter(period != "NA") %>% 
+  filter(depth == "1m") %>% 
+  group_by(treatment) %>% 
+  summarize(percent_275nm = (value[period == "TF"]/value[period == "T0"])*100) %>% 
+  filter(percent_275nm != "NA") 
+
+
+
+
+```
+# CDOM T0 TFinal Plots for Mature Incubations
+
+```{r}
+
+CDOM_T0_TF_plots <- BIOSSCOPE_cdom_metadata %>% 
+  mutate(depth_zone =
+           case_when(depth %in% c("1m", "10m") ~ "Surface",
+                     depth == "200m" ~ "Mesopelagic")) %>% 
+  filter(period %in% c("T0", "TF")) %>% 
+  ggplot(aes(x = wvln_2, y = value, color = treatment, linetype = period)) +
+  geom_line(size = 2) +
+  labs(x = "Wavelength (nm)") +
+  ylab(expression(a~(m^{"-1"}))) +
+  facet_grid(.~factor(depth_zone, levels = c("Surface", "Mesopelagic"))) +
+  scale_x_continuous(limits = c(250,600)) +
+  scale_y_continuous(limits = c(0,2), breaks = c(0.5,1,1.5,2)) +
+  scale_color_manual(values = c("blue", "brown2", "goldenrod1")) + 
+  scale_linetype_manual(values = c("solid", "longdash")) +
+  coord_cartesian(expand = c(0,0)) +
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        plot.margin = margin(0.5,0.5,0.5,0.5, "cm"),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = c(0.8,0.8),
+        legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black", hjust = 0.5),
+        axis.title = element_text(size = 20),
+        text = element_text(family = "Times"),
+        panel.spacing = unit(3, "lines"),
+        legend.key.width = unit(2.5, "cm"),
+        strip.text.x = element_text(size = 20)) +
+  guides(color = F)
+
+
+
+
+
+
+
+
+
+```
+
+
+
+# Figure 2
+
+```{r}
+
+
+
+figure2 <- plot_grid(a270nm_cdom_time_plot, CDOM_T0_TF_plots, nrow = 2, labels = c('A', 'B'), label_fontfamily = "Times New Roman", label_size = 20)
+
+
+
+
+
+
+
+```
+
+
+
+
+
+#CDOM Ammended T0 (Specific Absorption Ammended)
+
+```{r}
+
+CDOM_T0_ammended <- BIOSSCOPE_sdom_cdom <- read_xlsx(here("data", "SDOM_DOC_CDOM_Summary.xlsx"), sheet = 3)
+
+CDOM_T0_ammended_long <- melt(CDOM_T0_ammended, id = 'wvln_2', variable.name = 'CDOM_T0')
+
+BIOSSCOPE_sdom_cdom_metadata_CDOM_T0 <- BIOSSCOPE_sdom %>% 
+  select(cruise, days, depth, exudate_condition, period,treatment, CDOM_T0)
+
+
+BIOSSCOPE_cdom_T0_metadata <- merge(CDOM_T0_ammended_long, BIOSSCOPE_sdom_cdom_metadata_CDOM_T0, by = "CDOM_T0")
+
+BIOSSCOPE_cdom_T0_metadata_blanked <- BIOSSCOPE_cdom_T0_metadata %>% 
+  group_by(cruise, exudate_condition, wvln_2,depth) %>% 
+  mutate(blanked_abs = value - value[treatment == "Control"]) %>% 
+  ungroup() %>% 
+  select(cruise, depth,exudate_condition, treatment, wvln_2 ,blanked_abs) 
+
+
+specific_ag_amended_plot <- BIOSSCOPE_cdom_T0_metadata_blanked %>% 
+  filter(treatment != "Control") %>% 
+  group_by(depth, exudate_condition, treatment) %>% 
+  ggplot(aes(x = wvln_2, y = blanked_abs, linetype = exudate_condition, shape = depth)) +
+  geom_line(aes(color = treatment), size = 1, orientation = "x") +
+  scale_x_continuous(limits = c(250, 600)) + 
+  scale_y_continuous(limits = c(0, 0.02), breaks = c(0, 0.01,0.02)) +
+  scale_color_manual(values = c("brown2", "goldenrod1"), labels = c("+DOC", "+SPE-DOC")) +
+  ylab(expression(Amended~Specific~a~(m^{"-1"}~µMC^{-1}))) +
+  geom_rect(aes(xmin = 265, xmax = 285, ymin = -Inf, ymax = Inf), fill = "cyan", alpha = 0.003) +
+  geom_vline(aes(xintercept = 275), size = 2, linetype = 1, alpha = 1) +
+  labs(x = "Wavelength (nm)") +
+  coord_cartesian(expand = c(0,0)) +
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        plot.margin = margin(0.5,0.5,0.5,0.5, "cm"),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white", color = "white"),
+        legend.title = element_blank(),
+        legend.position = c(0.7,0.8),
+        legend.text = element_text(size = 20),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black", hjust = 0.5),
+        axis.title = element_text(size = 20),
+        text = element_text(family = "Times"),
+        panel.spacing = unit(3, "lines"),
+        legend.key.width = unit(2, "cm"),
+        strip.text.x = element_text(size = 20)) 
+
+
+
+
+
+
+```
+
+# Merge Specific 275 abosorption with bioavailability summary data 
+
+
+```{r}
+
+# Filter specific ammended data for only absorption at 275 nm
+
+
+BIOSSCOPE_cdom_T0_metadata_blanked_270 <- BIOSSCOPE_cdom_T0_metadata_blanked %>% 
+  filter(wvln_2 == 275) %>% 
+  filter(treatment != "Control")
+
+# Rename treatments to match for merging
+
+bioavailability_sum_data_rename <- bioavailability_sum_data %>% 
+  mutate(treatment = case_when(
+    treatment == "SPE-SDOM" ~ "SDOM PPL",
+    treatment == "SDOM" ~ "SDOM"
+  ))
+
+
+# Merge two dataframes
+
+ammended270_recalcitrantDOC <- merge(bioavailability_sum_data_rename, BIOSSCOPE_cdom_T0_metadata_blanked_270, by = c("exudate_condition", "treatment","depth"))
+
+# Model 1 and 2 Regression for % Bioavailable and Ammended Specific Absorption at 275
+
+percent_bioavailable_model1 <- lm(percent_bioavailable~blanked_abs, data = ammended270_recalcitrantDOC)
+  
+percent_bioavailable_model2 <- lmodel2::lmodel2(percent_bioavailable~blanked_abs, data = ammended270_recalcitrantDOC)
+
+
+# Plot Regression of Ammended 275 nm and Percent Bioavailable 
+
+ammended_275_plot <- ammended270_recalcitrantDOC %>% 
+  ggplot(aes(x = blanked_abs, y = percent_bioavailable)) +
+  geom_point(size = 6) +
+  geom_abline(slope = -5182.3, intercept = 102.06, size = 1) +
+  xlab(expression(Amended~Specific~a["275nm"]~(m^{"-1"}~µMC^{-1}))) +
+  labs(y = "Bioavailable DOC (% Amended)") + 
+  scale_y_continuous(limits = c(0,105, breaks = c(0,25,50,75,100))) +
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = c(0.85,0.7),
+        legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black", hjust = 0.5),
+        axis.title = element_text(size = 20),
+        text = element_text(family = "Times")) 
+  
+
+
+
+
+
+
+```
+# Figure 1
+
+```{r}
+
+figure1 <- plot_grid(specific_ag_amended_plot, ammended_275_plot,labels = c('A', 'B'), label_size = 20, label_fontfamily = "Times New Roman")
+
+
+
+
+
+```
+
+
+
+# Linear Regression between Phenolic Content and SUVA_275n
+
+
+
+```{r}
+
+
+a270_specific_amended_short <- ammended270_recalcitrantDOC %>% 
+  select(exudate_condition, depth, treatment, incubation_zone, blanked_abs) %>% 
+  mutate(treatment = case_when(
+    treatment == "SDOM" ~ "SDOM",
+    treatment == "SDOM PPL" ~ "SPE-SDOM"
+  ),
+  exudate_condition = case_when(
+    exudate_condition == "Mature" ~ "Healthy",
+    exudate_condition == "Senescent" ~ "Senescent"
+  ))
+
+phenol_recalcitrance_short <- phenolic_content_clean %>% 
+  select(TPC_HMW_percentDOC, incubation_zone, treatment, exudate_condition)
+
+
+a270_specific_amended_TPC <- merge(a270_specific_amended_short, phenol_recalcitrance_short, by = c("incubation_zone", "treatment", "exudate_condition"))
+
+
+
+
+lm_a270_TPC <- lm(blanked_abs ~ TPC_HMW_percentDOC, data = a270_specific_amended_TPC)
+
+summary(lm_a270_TPC)
+
+a270_TPC_p <- a270_specific_amended_TPC %>% 
+  ggplot(aes(x = TPC_HMW_percentDOC , y = blanked_abs)) +
+  geom_point(size = 6) +
+  geom_abline(intercept = 0.0026, slope = 0.000292, size = 1) +
+  ylab(expression(Amended~Specific~a["275nm"]~(m^{"-1"}~µMC^{-1}))) +
+  labs(x = "Amendment TPC (%DOC)") + 
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = c(0.85,0.7),
+        legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black", hjust = 0.5),
+        axis.title = element_text(size = 20),
+        text = element_text(family = "Times")) 
+
+```
+
+# Linear Regression between Amendment cocnentration and percent bioavailability
+
+
+
+```{r}
+
+
+
+
+
+
+
+
+```
+
+# Phenol Percent of Recalcintrant DOC
+
+```{r}
+bioavailability_sum_phenolic %>% 
+  select(TPC_HMW_percentDOC, percent_bioavailable) %>% 
+  mutate(percent_recalcitrant = 100 - percent_bioavailable) %>% 
+  mutate(percent_phenol_recalcitrant = (TPC_HMW_percentDOC/percent_recalcitrant)*100) %>% 
+  mutate(percent_phenol_recalcitrant = case_when(
+    percent_phenol_recalcitrant
+  ))
+  select(percent_phenol_recalcitrant)
+```
+
+
+
+# ANOVA for Specific a275 ammendment by treatment, Percent Bioavailability between depths
+
+
+```{r}
+
+a270_specific_amended_anova <- aov(blanked_abs ~ treatment, data = ammended270_recalcitrantDOC)
+
+summary(a270_specific_amended_anova)
+
+percent_bioavailability_depth <- aov(percent_bioavailable~incubation_zone, data = ammended270_recalcitrantDOC)
+
+
+summary(percent_bioavailability_depth)
+
+
+```
+
+
+
+# Photooxidation Experiments 
+
+```{r}
+
+SDOM_PD_exp <- read_xlsx(here("data", "SDOM_DOC_CDOM_Summary.xlsx"), sheet = 4)
+
+SDOM_PD_cdom <- read_xlsx(here("data", "SDOM_DOC_CDOM_Summary.xlsx"), sheet = 5)
+
+
+
+
+```
+
+#Delta DIC, DOC
+
+
+```{r}
+
+# DIC
+
+PD_DIC <- SDOM_PD_exp %>% 
+  ggplot(aes(x = time_hr, y = DIC_uM, color = treatment)) +
+  geom_point(size = 8) +
+  geom_line(size = 1) +
+  geom_errorbar(aes(ymin = DIC_uM - DIC_sd, ymax = DIC_uM + DIC_sd), width = 0) +
+  scale_color_manual(values = c("black", "goldenrod2")) +
+  scale_y_continuous(limits = c(-2,32), breaks = c(0,10,20,30)) +
+  labs(y = "∆DIC (µMC)",
+       x = "Hours") +
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "none",
+        legend.text = element_blank(),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black", hjust = 0.5),
+        axis.title = element_text(size = 20),
+        text = element_text(family = "Times")) 
+  
+#DOC
+
+PD_DOC <- SDOM_PD_exp %>% 
+  ggplot(aes(x = time_hr, y = DOC_uMC, color = treatment)) +
+  geom_point(size = 8) +
+  geom_line(size = 1) +
+  scale_y_continuous(limits = c(-35,2), breaks = c(0,-10,-20,-30)) +
+  geom_errorbar(aes(ymin = DOC_uMC - DOC_sd, ymax = DOC_uMC + DOC_sd), width = 0) +
+  scale_color_manual(values = c("black", "goldenrod2")) +
+  labs(y = "∆DOC (µMC)",
+       x = "Hours") +
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = c(0.2,0.2),
+        legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black", hjust = 0.5),
+        axis.title = element_text(size = 20),
+        text = element_text(family = "Times")) 
+
+# DOC vs DIC
+
+
+SDOM_PD_exp %>% 
+  filter(treatment != "Dark") %>% 
+  ggplot(aes(x = -DOC_uMC, y = DIC_uM)) +
+  geom_point(size = 1) +
+  geom_smooth(method = "lm") +
+  geom_errorbar(aes(ymin = DIC_uM - DIC_sd, 
+                    ymax = DIC_uM + DIC_sd), 
+                width = 0) +
+  geom_errorbar(aes(xmin = -DOC_uMC - DOC_sd, 
+                    xmax = -DOC_uMC + DOC_sd), 
+                width = 0) +
+  scale_y_continuous(limits = c(-2,0,35), breaks = c(0,10,20,30)) +
+  geom_abline(slope = 1, intercept = 0, color = "black") +
+  scale_color_manual(values = c("black", "goldenrod2")) +
+  labs(y = "∆DIC (µMC)",
+       x = "∆DOC (µMC)") +
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = c(0.15,0.15),
+        legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black", hjust = 0.5),
+        axis.title = element_text(size = 20),
+        text = element_text(family = "Times")) 
+
+
+
+# PGE 
+
+PD_PGE <- SDOM_PD_exp %>% 
+  ggplot(aes(x = time_hr, y = PGE_uMC, color = treatment)) +
+  geom_point(size = 8) +
+  geom_line(size = 1) +
+  geom_errorbar(aes(ymin = PGE_uMC - PGE_sd, ymax = PGE_uMC + PGE_sd), width = 0) +
+  scale_color_manual(values = c("black", "goldenrod2")) +
+  labs(y = "TPC (µMC-PGE)",
+       x = "Hours") +
+  scale_y_continuous(limits = c(-2,35), breaks = c(0,10,20,30)) +
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_blank(),
+        legend.position = "none",
+        legend.text = element_blank(),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black", hjust = 0.5),
+        axis.title = element_text(size = 20),
+        text = element_text(family = "Times")) 
+
+
+#CDOM
+
+SDOM_PD_cdom_long <- melt(SDOM_PD_cdom, id = "wvln_2", variable.name = "CDOM_code")
+
+
+SDOM_PD_exp_metadata <- SDOM_PD_exp %>% 
+  select(experiment, time_hr, treatment,CDOM_code)
+
+
+SDOM_PD_cdom_metadata <- merge(SDOM_PD_cdom_long, SDOM_PD_exp_metadata, by = "CDOM_code")
+
+PD_CDOM <- SDOM_PD_cdom_metadata %>% 
+  mutate(time_hr = as.factor(time_hr)) %>% 
+  ggplot(aes(x = wvln_2, y = value, color = treatment, shape = experiment)) +
+  geom_line(aes(linetype = time_hr), size = 2, position = position_jitter(h = 0.01 ,w = 0)) +
+  labs(x = "Wavelength (nm)") +
+  scale_linetype_manual(values = c("solid","dashed","dotted")) +
+  ylab(expression(a~(m^{"-1"}))) +
+  labs(linetype = "Time (hr)") +
+  scale_y_continuous(limits = c(0,20)) +
+  scale_x_continuous(limits = c(250,600)) +
+  coord_cartesian(expand = c(0,0)) +
+  scale_color_manual(values = c("black", "goldenrod2")) + 
+  theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
+        panel.grid.major = element_blank(),
+        plot.margin = margin(0.5,0.5,0.5,0.5, "cm"),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white", color = "black"),
+        legend.key = element_rect(fill = "white"),
+        legend.title = element_text(size = 15, hjust = 0.5),
+        legend.position = c(0.7,0.7),
+        legend.text = element_text(size = 15),
+        legend.key.width = unit(3, "cm"),
+        axis.text.x = element_text(size = 20, vjust = 0.5, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black"),
+        axis.title = element_text(size = 20),
+        text = element_text(family = "Times"),
+        panel.spacing = unit(3, "lines"),
+        strip.text.x = element_text(size = 20)) +
+  guides(color = "none")
+  
+
+
+figure3 <- plot_grid(PD_DOC, PD_PGE, PD_DIC, PD_CDOM, labels = c('A', 'B','C','D'), label_size = 20, label_fontfamily = "Times New Roman")
+
+```
+
