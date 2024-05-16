@@ -182,8 +182,8 @@ bioavailability_sum_data <- BIOSSCOPE_sdom %>%
  group_by(cruise, depth, exudate_condition) %>% 
   filter(parv_toc != "NA", period %in% c("T0", "TF")) %>% 
   summarize(treatment = c("Control", "SDOM", "SPE-SDOM"),
-            ammendment_doc = round(parv_toc[timepoint == 0] - parv_toc[treatment == "Control" & timepoint == 0],0),
-            se_ammendment_doc = round(sqrt(parv_toc_sd[timepoint == 0]^2 + parv_toc_sd[treatment == "Control" & timepoint == 0]^2),0),
+            ammendment_doc = round(parv_toc[timepoint == 0] - parv_toc[treatment == "Control" & timepoint == 0],1),
+            se_ammendment_doc = round(sqrt(parv_toc_sd[timepoint == 0]^2 + parv_toc_sd[treatment == "Control" & timepoint == 0]^2),1),
             delta_doc_90 = round((parv_toc[period == "TF"] - parv_toc[period == "T0"])*-1,1),
             se_delta_doc_90 = round(sqrt(parv_toc_sd[timepoint==0]^2 + parv_toc_sd[treatment == "Control" & timepoint == 0]^2),1),
             delta_doc_90_zeroed = round((delta_doc_90 - delta_doc_90[treatment == "Control"]),1),
@@ -264,8 +264,8 @@ phenolic_content <- read_xlsx(here("data", "Sargassum_recalcitrance.xlsx"))
   
 phenolic_content_clean <- phenolic_content %>% 
   select(exudate_condition, incubation_zone, treatment, TPC_HMW_percentDOC, sd_TPC_percent_DOC, Ammendment, ) %>% 
-  mutate(TPC_HMW_percentDOC = round(TPC_HMW_percentDOC,0),
-         sd_TPC_percent_DOC = round(sd_TPC_percent_DOC,0))
+  mutate(TPC_HMW_percentDOC = round(TPC_HMW_percentDOC,1),
+         sd_TPC_percent_DOC = round(sd_TPC_percent_DOC,1))
 
 
 bioavailability_sum_data_clean <- bioavailability_sum_data %>% 
@@ -287,7 +287,8 @@ bioavailability_sum_phenolic$amended_DOC_se <- paste(bioavailability_sum_phenoli
 bioavailability_sum_phenolic$bioavailable_DOC_se = paste(bioavailability_sum_phenolic$percent_bioavailable,                                                     bioavailability_sum_phenolic$se_percent_bioavailable, 
                                                          sep = "±")
 
-bioavailability_sum_phenolic$phenolic_se = paste(bioavailability_sum_phenolic$TPC_HMW_percentDOC) 
+bioavailability_sum_phenolic$phenolic_se = paste(bioavailability_sum_phenolic$TPC_HMW_percentDOC, 
+                                                 bioavailability_sum_phenolic$sd_TPC_percent_DOC, sep = "±") 
 
 
 
@@ -295,17 +296,16 @@ bioavailability_sum_phenolic_clean <- bioavailability_sum_phenolic %>%
   select(exudate_condition, incubation_zone, Ammendment, amended_DOC_se, phenolic_se, bioavailable_DOC_se)
 
 
-amendment_bioavailability_table <- bioavailability_sum_phenolic_clean %>% 
-  kbl(col.names = c("Physiological State", "Depth Zone", "Treatment","DOC Amended (µMC)", "TPC (%DOC)", "Bioavailability (%)")) %>% 
-  kable_styling(html_font = "Times New Roman", bootstrap_options = c("striped","hover", "condensed"), font_size = 24) %>% 
-  row_spec(0, bold = T) %>%
-  column_spec(1, width = "10cm") %>% 
-  column_spec(2, width = "5cm") %>% 
-  column_spec(3, width = "5cm") %>% 
-  column_spec(4, width = "10cm") %>% 
-  column_spec(5, width = "10cm") %>% 
-  column_spec(6, width = "10cm")
-
+amendment_bioavailability_table <- kbl(bioavailability_sum_phenolic_clean,
+                                       booktabs = TRUE,
+                                       col.names = c("Physiological State", 
+                                                     "Depth Zone", 
+                                                     "Treatment","DOC Amended (µMC)", 
+                                                     "TPC (%DOC)", 
+                                                     "Bioavailability (%)")) %>% 
+  kable_classic(html_font = "Times New Roman",
+                  full_width = F) %>% 
+  kable_styling(font_size = 20)
 
 
 ```
@@ -327,7 +327,7 @@ BIOSSCOPE_cdom_metadata_270 <- BIOSSCOPE_cdom_metadata %>%
   filter(wvln_2 == 275)
 
 
-a270nm_cdom_time_plot <- BIOSSCOPE_cdom_metadata_270 %>% 
+a275nm_cdom_time_plot <- BIOSSCOPE_cdom_metadata_270 %>% 
    mutate(depth_zone =
            case_when(depth %in% c("1m", "10m") ~ "Surface",
                      depth == "200m" ~ "Mesopelagic")) %>% 
@@ -350,13 +350,14 @@ a270nm_cdom_time_plot <- BIOSSCOPE_cdom_metadata_270 %>%
         legend.text = element_text(size = 20),
         axis.text.x = element_text(size = 20, vjust = 0.5, color = "black"),
         axis.text.y = element_text(size = 20, color = "black"),
-        axis.title = element_text(size = 25),
+        axis.title = element_text(size = 20),
         text = element_text(family = "Times"),
         panel.spacing = unit(3, "lines"),
         strip.text.x = element_text(size = 20)) 
 
 
 ```
+
 
 # Absorption 275nm Remaining after 3 months 
 
@@ -381,6 +382,7 @@ BIOSSCOPE_cdom_metadata_270 %>%
 
 
 ```
+
 # CDOM T0 TFinal Plots for Mature Incubations
 
 ```{r}
@@ -436,10 +438,7 @@ CDOM_T0_TF_plots <- BIOSSCOPE_cdom_metadata %>%
 
 
 
-figure2 <- plot_grid(a270nm_cdom_time_plot, CDOM_T0_TF_plots, nrow = 2, labels = c('A', 'B'), label_fontfamily = "Times New Roman", label_size = 20)
-
-
-
+figure2 <- plot_grid(a275nm_cdom_time_plot, CDOM_T0_TF_plots, nrow = 2, labels = c('A', 'B'), label_fontfamily = "Times New Roman", label_size = 20)
 
 
 
@@ -545,10 +544,12 @@ percent_bioavailable_model2 <- lmodel2::lmodel2(percent_bioavailable~blanked_abs
 ammended_275_plot <- ammended270_recalcitrantDOC %>% 
   ggplot(aes(x = blanked_abs, y = percent_bioavailable)) +
   geom_point(size = 6) +
-  geom_abline(slope = -5182.3, intercept = 102.06, size = 1) +
+  geom_abline(intercept = 99.79, slope = -5032.85,size = 1) +
   xlab(expression(Amended~Specific~a["275nm"]~(m^{"-1"}~µMC^{-1}))) +
   labs(y = "Bioavailable DOC (% Amended)") + 
-  scale_y_continuous(limits = c(0,105, breaks = c(0,25,50,75,100))) +
+  scale_y_continuous(limits = c(0,105, breaks = c(25,50,75,100))) +
+  scale_x_continuous(limits = c(0.000, 0.017), breaks = c(0.005,0.010,0.015)) +
+   coord_cartesian(expand = c(0,0)) +
   theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
@@ -569,6 +570,8 @@ ammended_275_plot <- ammended270_recalcitrantDOC %>%
 
 
 ```
+
+
 # Figure 1
 
 ```{r}
@@ -619,7 +622,7 @@ a270_TPC_p <- a270_specific_amended_TPC %>%
   geom_point(size = 6) +
   geom_abline(intercept = 0.0026, slope = 0.000292, size = 1) +
   ylab(expression(Amended~Specific~a["275nm"]~(m^{"-1"}~µMC^{-1}))) +
-  labs(x = "Amendment TPC (%DOC)") + 
+  labs(x = "Exudate TPC (%DOC)") + 
   theme(panel.background = element_rect(fill = "white", color = "black", size = 1.5),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
@@ -635,22 +638,9 @@ a270_TPC_p <- a270_specific_amended_TPC %>%
 
 ```
 
-# Linear Regression between Amendment cocnentration and percent bioavailability
-
-
-
-```{r}
-
-
-
-
-
-
-
-
-```
 
 # Phenol Percent of Recalcintrant DOC
+
 
 ```{r}
 bioavailability_sum_phenolic %>% 
@@ -664,20 +654,67 @@ bioavailability_sum_phenolic %>%
 ```
 
 
-
-# ANOVA for Specific a275 ammendment by treatment, Percent Bioavailability between depths
-
+# Two-sample t-test for Specific a275 amendment by treatment
 
 ```{r}
 
-a270_specific_amended_anova <- aov(blanked_abs ~ treatment, data = ammended270_recalcitrantDOC)
+# Specific a275nm amendment by treatment 
 
-summary(a270_specific_amended_anova)
+with(ammended270_recalcitrantDOC, shapiro.test(blanked_abs[treatment == "SDOM"])) # p = 0.487
+with(ammended270_recalcitrantDOC, shapiro.test(blanked_abs[treatment == "SDOM PPL"])) # p = 0.7448
 
-percent_bioavailability_depth <- aov(percent_bioavailable~incubation_zone, data = ammended270_recalcitrantDOC)
+sa275nm_f.test <- var.test(blanked_abs ~ treatment, data = ammended270_recalcitrantDOC)
+sa275nm_f.test # p-value = 0.6716 so variances are equal 
 
 
-summary(percent_bioavailability_depth)
+
+a275nm_treatment_t.test <- t.test(blanked_abs ~ treatment, data = ammended270_recalcitrantDOC, var.equal = TRUE)
+
+a275nm_treatment_t.test
+
+
+```
+
+
+# Two-sample t-test for Percent Bioavailability vs treatment 
+
+```{r}
+
+# Specific a275nm amendment by treatment 
+
+with(ammended270_recalcitrantDOC, shapiro.test(percent_bioavailable[treatment == "SDOM"])) # p = 0.7275
+with(ammended270_recalcitrantDOC, shapiro.test(percent_bioavailable[treatment == "SDOM PPL"])) # p = 0.7257
+
+percent_bioavailable_f.test <- var.test(percent_bioavailable ~ treatment, data = ammended270_recalcitrantDOC)
+percent_bioavailable_f.test # p-value = 0.7543 so variances are equal 
+
+
+
+percent_bioavailble_t.test <- t.test(percent_bioavailable ~ treatment, data = ammended270_recalcitrantDOC, var.equal = TRUE, alternative = "greater")
+
+percent_bioavailble_t.test
+
+
+```
+
+# Two-sample t-test for Percent Bioavailability vs depth 
+
+```{r}
+
+# Specific a275nm amendment by treatment 
+
+with(ammended270_recalcitrantDOC, shapiro.test(percent_bioavailable[incubation_zone == "Surface"])) # p = 0.7011
+with(ammended270_recalcitrantDOC, shapiro.test(percent_bioavailable[incubation_zone == "Mesopelagic"])) # p = 0.8548
+
+percent_bioavailable_depth_f.test <- var.test(percent_bioavailable ~ incubation_zone, data = ammended270_recalcitrantDOC)
+
+percent_bioavailable_depth_f.test # p-value = 0.7543 so variances are equal 
+
+
+
+percent_bioavailble_t.test <- t.test(percent_bioavailable ~ treatment, data = ammended270_recalcitrantDOC, var.equal = TRUE, alternative = "greater")
+
+percent_bioavailble_t.test
 
 
 ```
